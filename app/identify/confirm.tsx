@@ -114,7 +114,7 @@ export default function IdentifyConfirmScreen() {
           imageUri: imageUri ?? null,
           notes: null,
         });
-        Alert.alert('Added to cellar', 'New wine created from demo identification.', [
+        Alert.alert('Added to cellar', 'New wine created from label identification.', [
           { text: 'View wine', onPress: () => router.replace(`/wine/${wine.id}`) },
         ]);
       }
@@ -129,7 +129,7 @@ export default function IdentifyConfirmScreen() {
       <ScrollView style={styles.screen} contentContainerStyle={{ padding: 20, paddingBottom: 40 }}>
         {!!imageUri && <Image source={{ uri: imageUri }} style={styles.thumb} />}
         <Text style={styles.confidence}>
-          Demo match · {Math.round(identified.confidence * 100)}% confidence
+          Match · {Math.round(identified.confidence * 100)}% confidence
         </Text>
         <Text style={styles.producer}>{identified.producer}</Text>
         <Text style={styles.name}>{identified.name}</Text>

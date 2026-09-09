@@ -64,6 +64,12 @@ export interface IdentifiedBottle {
 export interface AppSettings {
   zipCode: string;
   seeded: boolean;
+  /** OpenAI API key stored on-device only (AsyncStorage). Never commit. */
+  openaiApiKey: string;
+  /** Vision model id, e.g. gpt-4o-mini or gpt-4o */
+  recognitionModel: string;
+  /** When true, Identify uses DemoBottleRecognizer instead of cloud vision. Default false. */
+  useDemoRecognition: boolean;
 }
 
 export type WineWithMeta = Wine & {

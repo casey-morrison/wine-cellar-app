@@ -32,7 +32,13 @@ export function useCellar() {
   const [filters, setFilters] = useState<WineFilters>(emptyFilters);
   const [loading, setLoading] = useState(true);
   const [stats, setStats] = useState({ bottles: 0, distinctWines: 0, regions: [] as string[], types: [] as any[] });
-  const [settings, setSettings] = useState<AppSettings>({ zipCode: '94102', seeded: false });
+  const [settings, setSettings] = useState<AppSettings>({
+    zipCode: '94102',
+    seeded: false,
+    openaiApiKey: '',
+    recognitionModel: 'gpt-4o-mini',
+    useDemoRecognition: false,
+  });
   const [tastingsByWine, setTastingsByWine] = useState<Record<string, TastingNote[]>>({});
 
   const refresh = useCallback(async (nextFilters?: WineFilters) => {

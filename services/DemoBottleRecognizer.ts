@@ -1,9 +1,9 @@
 import type { IdentifiedBottle, Wine, WineType } from '@/types/wine';
 
 /**
- * Demo bottle recognizer — simulates label OCR / vision matching.
- * Returns a confident match from the cellar catalog (or a plausible new bottle).
- * Replace with a real vision/label API later; keep this file isolated.
+ * Demo bottle recognizer — simulates label OCR / vision matching (URI-hash stub).
+ * Kept for offline testing via Settings → “Use demo recognition”.
+ * Production Identify uses VisionBottleRecognizer when an OpenAI key is set.
  */
 export interface BottleRecognizer {
   identifyFromImage(imageUri: string, catalog: Wine[]): Promise<IdentifiedBottle>;

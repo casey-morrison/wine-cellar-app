@@ -11,6 +11,9 @@ const KEYS = {
 const DEFAULT_SETTINGS: AppSettings = {
   zipCode: '94102',
   seeded: false,
+  openaiApiKey: '',
+  recognitionModel: 'gpt-4o-mini',
+  useDemoRecognition: false,
 };
 
 function nowIso() {
@@ -36,7 +39,8 @@ async function writeJson<T>(key: string, value: T): Promise<void> {
 }
 
 export async function getSettings(): Promise<AppSettings> {
-  return readJson(KEYS.settings, DEFAULT_SETTINGS);
+  const raw = await readJson<Partial<AppSettings>>(KEYS.settings, DEFAULT_SETTINGS);
+  return { ...DEFAULT_SETTINGS, ...raw };
 }
 
 export async function updateSettings(patch: Partial<AppSettings>): Promise<AppSettings> {

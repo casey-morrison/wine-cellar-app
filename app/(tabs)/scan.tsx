@@ -7,13 +7,20 @@ import Colors from '@/constants/Colors';
 import { Button } from '@/components/ui/Button';
 import { useCellarContext } from '@/context/CellarContext';
 import { demoBottleRecognizer } from '@/services/DemoBottleRecognizer';
+import {
+  createVisionBottleRecognizer,
+  VisionRecognitionError,
+} from '@/services/VisionBottleRecognizer';
 
 const c = Colors.dark;
 
 export default function ScanScreen() {
-  const { wines } = useCellarContext();
+  const { wines, settings } = useCellarContext();
   const [uri, setUri] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+
+  const hasApiKey = Boolean(settings.openaiApiKey?.trim());
+  const usingDemo = settings.useDemoRecognition === true;
 
   async function ensureCameraPermission() {
     const { status } = await ImagePicker.requestCameraPermissionsAsync();
@@ -58,11 +65,55 @@ export default function ScanScreen() {
     }
   }
 
+  function alertMissingKey() {
+    Alert.alert(
+      'OpenAI key required',
+      'Real label recognition needs an OpenAI API key. Add one in Settings (platform.openai.com), or enable “Use demo recognition” there for offline testing.',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        { text: 'Open Settings', onPress: () => router.push('/(tabs)/settings') },
+      ]
+    );
+  }
+
   async function identify() {
     if (!uri) return;
+
+    if (!usingDemo && !hasApiKey) {
+      alertMissingKey();
+      return;
+    }
+
     setBusy(true);
     try {
-      const match = await demoBottleRecognizer.identifyFromImage(uri, wines);
+      const recognizer = usingDemo
+        ? demoBottleRecognizer
+        : createVisionBottleRecognizer(
+            settings.openaiApiKey,
+            settings.recognitionModel || 'gpt-4o-mini'
+          );
+
+      const match = await recognizer.identifyFromImage(uri, wines);
+
+      if (!usingDemo && match.confidence < 0.6 && !match.matchedWineId) {
+        Alert.alert(
+          'Low confidence',
+          `Read “${match.producer} ${match.name}” (${Math.round(match.confidence * 100)}%). You can still confirm and edit on the next screen, or retry with a clearer photo.`,
+          [
+            { text: 'Retry', style: 'cancel' },
+            {
+              text: 'Continue',
+              onPress: () =>
+                router.push({
+                  pathname: '/identify/confirm',
+                  params: { imageUri: uri, payload: JSON.stringify(match) },
+                }),
+            },
+          ]
+        );
+        return;
+      }
+
       router.push({
         pathname: '/identify/confirm',
         params: {
@@ -71,18 +122,37 @@ export default function ScanScreen() {
         },
       });
     } catch (e) {
-      Alert.alert('Identification failed', 'Demo recognizer could not process this image. Try again.');
+      const msg =
+        e instanceof VisionRecognitionError
+          ? e.message
+          : e instanceof Error
+            ? e.message
+            : 'Could not identify this bottle. Try again.';
+
+      if (e instanceof VisionRecognitionError && (e.code === 'no_key' || e.code === 'invalid_key')) {
+        Alert.alert('Recognition failed', msg, [
+          { text: 'Cancel', style: 'cancel' },
+          { text: 'Open Settings', onPress: () => router.push('/(tabs)/settings') },
+        ]);
+      } else if (e instanceof VisionRecognitionError && e.code === 'no_label') {
+        Alert.alert('No label text found', msg, [{ text: 'OK' }]);
+      } else {
+        Alert.alert('Identification failed', msg);
+      }
     } finally {
       setBusy(false);
     }
   }
 
+  const lead = usingDemo
+    ? 'Demo recognition is ON — Identify uses a local stub that does not read the photo. Turn it off in Settings and add an OpenAI key for real label OCR.'
+    : hasApiKey
+      ? 'Photograph a bottle label or pick from your library. Identify runs cloud vision (OpenAI) on the actual image, then fuzzy-matches your cellar.'
+      : 'Photograph a bottle label or pick from your library. Add an OpenAI API key in Settings to enable real label recognition.';
+
   return (
     <View style={styles.screen}>
-      <Text style={styles.lead}>
-        Photograph a bottle label or pick from your library. Demo recognition matches against your
-        cellar — no live vision API.
-      </Text>
+      <Text style={styles.lead}>{lead}</Text>
 
       <View style={styles.preview}>
         {uri ? (
