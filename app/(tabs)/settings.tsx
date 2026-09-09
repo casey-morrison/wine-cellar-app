@@ -20,6 +20,7 @@ export default function SettingsScreen() {
   const [apiKey, setApiKey] = useState(settings.openaiApiKey ?? '');
   const [model, setModel] = useState(settings.recognitionModel || 'gpt-4o-mini');
   const [useDemo, setUseDemo] = useState(settings.useDemoRecognition === true);
+  const [preferCloud, setPreferCloud] = useState(settings.preferCloudVision === true);
   const [savingZip, setSavingZip] = useState(false);
   const [savingVision, setSavingVision] = useState(false);
 
@@ -28,6 +29,7 @@ export default function SettingsScreen() {
     setApiKey(settings.openaiApiKey ?? '');
     setModel(settings.recognitionModel || 'gpt-4o-mini');
     setUseDemo(settings.useDemoRecognition === true);
+    setPreferCloud(settings.preferCloudVision === true);
   }, [settings]);
 
   async function saveZip() {
@@ -53,15 +55,16 @@ export default function SettingsScreen() {
         openaiApiKey: apiKey.trim(),
         recognitionModel: cleanedModel,
         useDemoRecognition: useDemo,
+        preferCloudVision: preferCloud,
       });
       setModel(cleanedModel);
       Alert.alert(
         'Saved',
         useDemo
           ? 'Demo recognition enabled for Identify.'
-          : apiKey.trim()
-            ? 'OpenAI vision recognition ready on Identify.'
-            : 'Key cleared. Add a key (or enable demo) to identify bottles.'
+          : preferCloud && apiKey.trim()
+            ? 'Cloud vision preferred when identifying bottles.'
+            : 'On-device OCR is the default path (needs a development build).'
       );
     } finally {
       setSavingVision(false);
@@ -73,10 +76,15 @@ export default function SettingsScreen() {
     await saveSettings({ useDemoRecognition: next });
   }
 
+  async function onTogglePreferCloud(next: boolean) {
+    setPreferCloud(next);
+    await saveSettings({ preferCloudVision: next });
+  }
+
   function confirmReset() {
     Alert.alert(
       'Reset sample data?',
-      'This replaces your cellar and tasting notes with the original demo catalog (~36 wines). Vision settings (API key) are kept.',
+      'This replaces your cellar and tasting notes with the original demo catalog (~36 wines). Recognition settings (API key, toggles) are kept.',
       [
         { text: 'Cancel', style: 'cancel' },
         {
@@ -92,6 +100,12 @@ export default function SettingsScreen() {
     );
   }
 
+  const visionStatus = settings.useDemoRecognition
+    ? 'Demo'
+    : settings.preferCloudVision && settings.openaiApiKey?.trim()
+      ? `Cloud · ${settings.recognitionModel || 'gpt-4o-mini'}`
+      : 'On-device OCR';
+
   return (
     <ScrollView
       style={styles.screen}
@@ -100,22 +114,39 @@ export default function SettingsScreen() {
     >
       <Text style={styles.section}>Label recognition</Text>
       <Text style={styles.help}>
-        Identify sends the bottle photo to OpenAI vision, extracts producer / name / vintage, then
-        fuzzy-matches your cellar. Get a key at platform.openai.com — it stays on this device only
-        (AsyncStorage) and is never committed. Each Identify call uses a small amount of API credit.
+        Default path is free on-device OCR (Apple Vision on iOS via expo-mlkit-ocr, ML Kit on
+        Android). Photos stay on your phone. This requires a development build — Expo Go cannot load
+        the native OCR module. See “How to install the iPhone build” below and the README.
       </Text>
-      <Text style={styles.label}>OpenAI API key</Text>
+
+      <View style={styles.switchRow}>
+        <View style={{ flex: 1, paddingRight: 12 }}>
+          <Text style={styles.switchLabel}>Prefer cloud vision</Text>
+          <Text style={styles.switchHelp}>
+            Optional. When on and an OpenAI key is set, Identify uses cloud vision instead of
+            on-device OCR. Off by default.
+          </Text>
+        </View>
+        <Switch
+          value={preferCloud}
+          onValueChange={onTogglePreferCloud}
+          trackColor={{ false: c.border, true: c.tintMuted }}
+          thumbColor={preferCloud ? c.tintLight : c.textMuted}
+        />
+      </View>
+
+      <Text style={[styles.label, { marginTop: 8 }]}>OpenAI API key (optional cloud fallback)</Text>
       <TextInput
         value={apiKey}
         onChangeText={setApiKey}
         autoCapitalize="none"
         autoCorrect={false}
         secureTextEntry
-        placeholder="sk-…"
+        placeholder="sk-… (optional)"
         placeholderTextColor={c.textMuted}
         style={styles.input}
       />
-      <Text style={[styles.label, { marginTop: 14 }]}>Recognition model</Text>
+      <Text style={[styles.label, { marginTop: 14 }]}>Cloud recognition model</Text>
       <TextInput
         value={model}
         onChangeText={setModel}
@@ -125,12 +156,13 @@ export default function SettingsScreen() {
         placeholderTextColor={c.textMuted}
         style={styles.input}
       />
+
       <View style={styles.switchRow}>
         <View style={{ flex: 1, paddingRight: 12 }}>
           <Text style={styles.switchLabel}>Use demo recognition</Text>
           <Text style={styles.switchHelp}>
-            Offline stub that does not read the photo. Off by default — only for testing without a
-            key.
+            Offline stub that does not read the photo. Useful for testing UI without camera quality
+            or a native build.
           </Text>
         </View>
         <Switch
@@ -146,6 +178,15 @@ export default function SettingsScreen() {
         loading={savingVision}
         style={{ marginTop: 14 }}
       />
+
+      <Text style={[styles.section, { marginTop: 32 }]}>How to install the iPhone build</Text>
+      <Text style={styles.help}>
+        Expo Go is no longer enough for free OCR. On a Mac: install packages, run{' '}
+        <Text style={styles.mono}>npx expo prebuild</Text>, then{' '}
+        <Text style={styles.mono}>npx expo run:ios</Text>. Without a Mac / Xcode: use EAS Build —{' '}
+        <Text style={styles.mono}>eas build -p ios --profile development</Text> — then install the
+        build on your iPhone (QR / link from Expo). Full steps are in the project README.
+      </Text>
 
       <Text style={[styles.section, { marginTop: 32 }]}>Location</Text>
       <Text style={styles.help}>
@@ -167,22 +208,14 @@ export default function SettingsScreen() {
         <Row label="Bottles in cellar" value={String(stats.bottles)} />
         <Row label="Distinct wines" value={String(stats.distinctWines)} />
         <Row label="Current ZIP" value={settings.zipCode} />
-        <Row
-          label="Vision"
-          value={
-            settings.useDemoRecognition
-              ? 'Demo'
-              : settings.openaiApiKey?.trim()
-                ? `OpenAI · ${settings.recognitionModel || 'gpt-4o-mini'}`
-                : 'Key not set'
-          }
-        />
+        <Row label="Vision" value={visionStatus} />
       </View>
 
       <Text style={[styles.section, { marginTop: 32 }]}>Privacy</Text>
       <Text style={styles.help}>
-        When real recognition is on, bottle photos are uploaded to OpenAI for OCR. Critic scores and
-        retail prices remain local demo stubs (`DemoProvider`).
+        On-device OCR keeps label photos on your device. Cloud vision (only if you enable “Prefer
+        cloud vision” and set a key) uploads photos to OpenAI. Critic scores and retail prices remain
+        local demo stubs (`DemoProvider`).
       </Text>
 
       <Button
@@ -208,6 +241,11 @@ const styles = StyleSheet.create({
   screen: { flex: 1, backgroundColor: c.background },
   section: { color: c.text, fontSize: 18, fontWeight: '700', marginBottom: 8 },
   help: { color: c.textSecondary, fontSize: 14, lineHeight: 20, marginBottom: 12 },
+  mono: {
+    color: c.tintLight,
+    fontFamily: 'Courier',
+    fontSize: 13,
+  },
   label: { color: c.textSecondary, fontSize: 13, fontWeight: '600', marginBottom: 6 },
   input: {
     backgroundColor: c.inputBg,

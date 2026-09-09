@@ -8,6 +8,10 @@ import { Button } from '@/components/ui/Button';
 import { useCellarContext } from '@/context/CellarContext';
 import { demoBottleRecognizer } from '@/services/DemoBottleRecognizer';
 import {
+  createOnDeviceBottleRecognizer,
+  OnDeviceRecognitionError,
+} from '@/services/OnDeviceBottleRecognizer';
+import {
   createVisionBottleRecognizer,
   VisionRecognitionError,
 } from '@/services/VisionBottleRecognizer';
@@ -21,6 +25,7 @@ export default function ScanScreen() {
 
   const hasApiKey = Boolean(settings.openaiApiKey?.trim());
   const usingDemo = settings.useDemoRecognition === true;
+  const preferCloud = settings.preferCloudVision === true && hasApiKey;
 
   async function ensureCameraPermission() {
     const { status } = await ImagePicker.requestCameraPermissionsAsync();
@@ -43,7 +48,7 @@ export default function ScanScreen() {
   async function takePhoto() {
     if (!(await ensureCameraPermission())) return;
     const result = await ImagePicker.launchCameraAsync({
-      quality: 0.8,
+      quality: 0.85,
       allowsEditing: true,
       aspect: [3, 4],
     });
@@ -55,7 +60,7 @@ export default function ScanScreen() {
   async function pickPhoto() {
     if (!(await ensureLibraryPermission())) return;
     const result = await ImagePicker.launchImageLibraryAsync({
-      quality: 0.8,
+      quality: 0.85,
       allowsEditing: true,
       aspect: [3, 4],
       mediaTypes: ['images'],
@@ -65,35 +70,38 @@ export default function ScanScreen() {
     }
   }
 
-  function alertMissingKey() {
-    Alert.alert(
-      'OpenAI key required',
-      'Real label recognition needs an OpenAI API key. Add one in Settings (platform.openai.com), or enable “Use demo recognition” there for offline testing.',
-      [
-        { text: 'Cancel', style: 'cancel' },
-        { text: 'Open Settings', onPress: () => router.push('/(tabs)/settings') },
-      ]
-    );
-  }
-
   async function identify() {
     if (!uri) return;
 
-    if (!usingDemo && !hasApiKey) {
-      alertMissingKey();
-      return;
-    }
-
     setBusy(true);
     try {
-      const recognizer = usingDemo
-        ? demoBottleRecognizer
-        : createVisionBottleRecognizer(
-            settings.openaiApiKey,
-            settings.recognitionModel || 'gpt-4o-mini'
-          );
-
-      const match = await recognizer.identifyFromImage(uri, wines);
+      let match;
+      if (usingDemo) {
+        match = await demoBottleRecognizer.identifyFromImage(uri, wines);
+      } else if (preferCloud) {
+        match = await createVisionBottleRecognizer(
+          settings.openaiApiKey,
+          settings.recognitionModel || 'gpt-4o-mini'
+        ).identifyFromImage(uri, wines);
+      } else {
+        try {
+          match = await createOnDeviceBottleRecognizer().identifyFromImage(uri, wines);
+        } catch (ocrErr) {
+          // Optional secondary: if OCR module missing and a key exists, offer cloud once.
+          if (
+            ocrErr instanceof OnDeviceRecognitionError &&
+            ocrErr.code === 'unavailable' &&
+            hasApiKey
+          ) {
+            match = await createVisionBottleRecognizer(
+              settings.openaiApiKey,
+              settings.recognitionModel || 'gpt-4o-mini'
+            ).identifyFromImage(uri, wines);
+          } else {
+            throw ocrErr;
+          }
+        }
+      }
 
       if (!usingDemo && match.confidence < 0.6 && !match.matchedWineId) {
         Alert.alert(
@@ -123,18 +131,29 @@ export default function ScanScreen() {
       });
     } catch (e) {
       const msg =
-        e instanceof VisionRecognitionError
+        e instanceof OnDeviceRecognitionError || e instanceof VisionRecognitionError
           ? e.message
           : e instanceof Error
             ? e.message
             : 'Could not identify this bottle. Try again.';
 
-      if (e instanceof VisionRecognitionError && (e.code === 'no_key' || e.code === 'invalid_key')) {
+      if (e instanceof OnDeviceRecognitionError && e.code === 'unavailable') {
+        Alert.alert('Development build required', msg, [
+          { text: 'Cancel', style: 'cancel' },
+          { text: 'Open Settings', onPress: () => router.push('/(tabs)/settings') },
+        ]);
+      } else if (
+        e instanceof VisionRecognitionError &&
+        (e.code === 'no_key' || e.code === 'invalid_key')
+      ) {
         Alert.alert('Recognition failed', msg, [
           { text: 'Cancel', style: 'cancel' },
           { text: 'Open Settings', onPress: () => router.push('/(tabs)/settings') },
         ]);
-      } else if (e instanceof VisionRecognitionError && e.code === 'no_label') {
+      } else if (
+        (e instanceof OnDeviceRecognitionError || e instanceof VisionRecognitionError) &&
+        e.code === 'no_label'
+      ) {
         Alert.alert('No label text found', msg, [{ text: 'OK' }]);
       } else {
         Alert.alert('Identification failed', msg);
@@ -145,10 +164,10 @@ export default function ScanScreen() {
   }
 
   const lead = usingDemo
-    ? 'Demo recognition is ON — Identify uses a local stub that does not read the photo. Turn it off in Settings and add an OpenAI key for real label OCR.'
-    : hasApiKey
-      ? 'Photograph a bottle label or pick from your library. Identify runs cloud vision (OpenAI) on the actual image, then fuzzy-matches your cellar.'
-      : 'Photograph a bottle label or pick from your library. Add an OpenAI API key in Settings to enable real label recognition.';
+    ? 'Demo recognition is ON — Identify uses a local stub that does not read the photo. Turn it off in Settings to use free on-device OCR (dev build) or optional cloud vision.'
+    : preferCloud
+      ? 'Photograph a bottle label or pick from your library. Identify prefers cloud vision (OpenAI) because “Prefer cloud vision” is on in Settings.'
+      : 'Photograph a bottle label or pick from your library. Identify runs free on-device OCR (Apple Vision / ML Kit) — requires a development build, not Expo Go. Optional OpenAI cloud fallback is in Settings.';
 
   return (
     <View style={styles.screen}>

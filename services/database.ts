@@ -14,6 +14,7 @@ const DEFAULT_SETTINGS: AppSettings = {
   openaiApiKey: '',
   recognitionModel: 'gpt-4o-mini',
   useDemoRecognition: false,
+  preferCloudVision: false,
 };
 
 function nowIso() {

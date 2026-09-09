@@ -38,6 +38,7 @@ export function useCellar() {
     openaiApiKey: '',
     recognitionModel: 'gpt-4o-mini',
     useDemoRecognition: false,
+    preferCloudVision: false,
   });
   const [tastingsByWine, setTastingsByWine] = useState<Record<string, TastingNote[]>>({});
 
